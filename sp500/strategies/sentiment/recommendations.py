@@ -56,34 +56,30 @@ class RecommendationTrendsStrategy(BaseStrategy):
         if total < 5:
             return None
 
-        # Weighted bullishness score
-        weighted_bull = strong_buy * 2 + buy * 1
-        weighted_bear = strong_sell * 2 + sell * 1
-        bull_plus_bear = weighted_bull + weighted_bear
-
-        if bull_plus_bear == 0:
-            # All hold — neutral score
-            score = 50.0
-        else:
-            score = (weighted_bull / bull_plus_bear) * 100
+        # Weighted average on 1–5 scale, then normalise to 0–100
+        weighted_sum = (strong_buy * 5 + buy * 4 + hold * 3 + sell * 2 + strong_sell * 1)
+        avg_rating = weighted_sum / total          # range [1, 5]
+        score = (avg_rating - 1) / 4 * 100         # normalise to [0, 100]
 
         # Trend bonus: compare to previous period if available
         trend_direction = "stable"
         if len(df) >= 2:
             prev = df.iloc[1]
-            prev_bull = int(prev.get("strongBuy", 0)) * 2 + int(prev.get("buy", 0))
-            prev_bear = int(prev.get("strongSell", 0)) * 2 + int(prev.get("sell", 0))
-            prev_total = prev_bull + prev_bear
+            prev_ws = (int(prev.get("strongBuy", 0)) * 5 + int(prev.get("buy", 0)) * 4
+                       + int(prev.get("hold", 0)) * 3 + int(prev.get("sell", 0)) * 2
+                       + int(prev.get("strongSell", 0)) * 1)
+            prev_total = (int(prev.get("strongBuy", 0)) + int(prev.get("buy", 0))
+                          + int(prev.get("hold", 0)) + int(prev.get("sell", 0))
+                          + int(prev.get("strongSell", 0)))
 
             if prev_total > 0:
-                prev_ratio = prev_bull / prev_total
-                curr_ratio = weighted_bull / bull_plus_bear if bull_plus_bear > 0 else 0.5
-                shift = curr_ratio - prev_ratio
+                prev_avg = prev_ws / prev_total
+                shift = avg_rating - prev_avg
 
-                if shift > 0.05:
+                if shift > 0.2:
                     trend_direction = "improving"
                     score = min(100.0, score + 10)
-                elif shift < -0.05:
+                elif shift < -0.2:
                     trend_direction = "declining"
                     score = max(0.0, score - 10)
 
@@ -102,7 +98,7 @@ class RecommendationTrendsStrategy(BaseStrategy):
                 "sell": sell,
                 "strong_sell": strong_sell,
                 "total_ratings": total,
-                "bull_ratio": round(weighted_bull / bull_plus_bear, 2) if bull_plus_bear > 0 else 0.5,
+                "avg_rating": round(avg_rating, 2),
                 "trend_direction": trend_direction,
             },
             confidence=round(confidence, 2),
