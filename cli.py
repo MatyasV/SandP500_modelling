@@ -24,7 +24,8 @@ def cmd_undervalue(args, config):
     db_path = config["cache"]["db_path"]
     os.makedirs(os.path.dirname(db_path), exist_ok=True)
 
-    cache = SQLiteCache(db_path, config["cache"]["ttl_hours"])
+    ttl = 0 if args.no_cache else config["cache"]["ttl_hours"]
+    cache = SQLiteCache(db_path, ttl)
     providers = discover_providers(config)
     data_manager = DataManager(providers, cache, config)
     strategies = discover_strategies(config)

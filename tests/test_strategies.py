@@ -111,6 +111,27 @@ class TestDCFStrategy(unittest.TestCase):
         result = self.strategy.analyze("TEST", data)
         self.assertIsNone(result)
 
+    def test_analyze_negative_last_fcf_no_complex_error(self):
+        """Negative last FCF with positive average should not raise TypeError."""
+        # First two years have high positive FCF, last year is negative —
+        # average is positive but last_fcf < 0 which would produce a complex
+        # CAGR if not guarded against.
+        cf_df = pd.DataFrame({
+            "2021": [200e9, -10e9],
+            "2022": [180e9, -10e9],
+            "2023": [-20e9, -10e9],
+        }, index=["Operating Cash Flow", "Capital Expenditure"])
+
+        data = {
+            DataField.INFO: {"currentPrice": 100.0, "sharesOutstanding": 1e9},
+            DataField.CASH_FLOW: cf_df,
+        }
+        result = self.strategy.analyze("TEST", data)
+        # Should either return a valid result or None, but never raise
+        if result is not None:
+            self.assertGreaterEqual(result.score, 0)
+            self.assertLessEqual(result.score, 100)
+
 
 class TestRelativeStrategy(unittest.TestCase):
     def setUp(self):
