@@ -27,6 +27,16 @@ dividend:
   yield_trap_threshold: 0.08   # yields above 8% penalized as potential traps
   min_history_years: 1
 
+analyst:
+  upside_cap_pct: 100            # 100% upside to mean target = score 100
+  min_analysts: 3                # skip tickers with fewer analysts
+
+sentiment:
+  default_weights:
+    analyst: 1.0
+    recommendations: 1.0
+  weight_by_confidence: true
+
 composite:
   default_weights:
     graham: 1.0

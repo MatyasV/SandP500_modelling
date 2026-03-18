@@ -1,5 +1,6 @@
 """BaseStrategy ABC — interface for all analysis strategies."""
 
+import logging
 from abc import ABC, abstractmethod
 from typing import Any
 
@@ -7,6 +8,8 @@ import pandas as pd
 
 from sp500.core.models import StrategyResult
 from sp500.data.fields import DataField
+
+logger = logging.getLogger(__name__)
 
 
 class BaseStrategy(ABC):
@@ -44,9 +47,12 @@ class BaseStrategy(ABC):
         """
         results = []
         for ticker, data in all_data.items():
-            result = self.analyze(ticker, data)
-            if result is not None:
-                results.append(result)
+            try:
+                result = self.analyze(ticker, data)
+                if result is not None:
+                    results.append(result)
+            except Exception as e:
+                logger.warning("Failed to analyze %s: %s", ticker, e)
         return results
 
     def filter_universe(self, constituents: pd.DataFrame) -> pd.DataFrame:
