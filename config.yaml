@@ -1,0 +1,26 @@
+cache:
+  db_path: ./data/sp500_cache.db
+  ttl_hours: 24              # cached data considered fresh for this long
+
+rate_limits:
+  yfinance:
+    delay_seconds: 0.5       # delay between individual ticker fetches
+    batch_size: 50            # tickers per batch
+    batch_delay: 10           # seconds between batches
+
+dcf:
+  projection_years: 5
+  terminal_growth_rate: 0.025   # 2.5% — roughly long-run inflation
+  discount_rate: 0.10           # 10% flat for v1
+  max_growth_cap: 0.20          # cap historical growth rate at 20%
+
+composite:
+  default_weights:
+    graham: 1.0
+    dcf: 1.0
+    relative: 1.0
+  weight_by_confidence: true    # scale weights by data completeness
+
+defaults:
+  top_n: 20
+  output_format: table          # table | csv | json
