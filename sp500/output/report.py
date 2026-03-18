@@ -51,12 +51,13 @@ def _print_score_histogram(results: list[StrategyResult],
 
 def print_report(results: list[StrategyResult], strategy_name: str,
                  verbose: bool = False,
-                 sector_map: dict[str, str] | None = None) -> None:
+                 sector_map: dict[str, str] | None = None,
+                 category: str = "Undervalue") -> None:
     """Print a formatted report to the terminal using rich."""
     console = Console()
 
     console.print()
-    console.print(f"[bold]S&P 500 Undervalue Screen — {strategy_name.upper()}[/bold]")
+    console.print(f"[bold]S&P 500 {category} Screen — {strategy_name.upper()}[/bold]")
     console.print(f"[dim]{datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}[/dim]")
     console.print()
 
@@ -64,7 +65,8 @@ def print_report(results: list[StrategyResult], strategy_name: str,
         console.print("[yellow]No results to display.[/yellow]")
         return
 
-    table = format_table(results, verbose=verbose)
+    table = format_table(results, verbose=verbose,
+                         title=f"{category} Screening Results")
     console.print(table)
 
     # Sector distribution

@@ -30,9 +30,10 @@ def _score_bar(score: float, width: int = 20) -> str:
     return f"[{style}]{'█' * filled}[/{style}][dim]{'░' * (width - filled)}[/dim]"
 
 
-def format_table(results: list[StrategyResult], verbose: bool = False) -> Table:
+def format_table(results: list[StrategyResult], verbose: bool = False,
+                 title: str = "Screening Results") -> Table:
     """Format results as a rich Table object."""
-    table = Table(title="Undervalue Screening Results", show_lines=False)
+    table = Table(title=title, show_lines=False)
     table.add_column("Rank", justify="right", style="dim", width=4)
     table.add_column("Ticker", style="cyan bold", width=8)
     table.add_column("Score", justify="right", width=8)

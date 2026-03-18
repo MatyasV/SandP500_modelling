@@ -13,21 +13,53 @@ def load_config(path: str = "config.yaml") -> dict:
         return yaml.safe_load(f)
 
 
-def cmd_undervalue(args, config):
-    """Run undervalue screening."""
-    from sp500.core.orchestrator import Orchestrator
-    from sp500.core.registry import discover_providers, discover_strategies
+def _output_results(args, results, strategy_name, orchestrator=None,
+                    category="Undervalue"):
+    """Shared output logic for all category commands."""
+    if args.output_format == "csv":
+        from sp500.output.formatters import format_csv
+        output = format_csv(results, args.output)
+        if not args.output:
+            print(output)
+    elif args.output_format == "json":
+        from sp500.output.formatters import format_json
+        output = format_json(results)
+        if args.output:
+            with open(args.output, "w") as f:
+                f.write(output)
+        else:
+            print(output)
+    else:
+        from sp500.output.report import print_report
+        sector_map = None
+        if orchestrator and hasattr(orchestrator, 'constituents') and orchestrator.constituents is not None:
+            sector_map = dict(zip(orchestrator.constituents["Symbol"],
+                                  orchestrator.constituents["GICS Sector"]))
+        print_report(results, strategy_name, verbose=args.verbose,
+                     sector_map=sector_map, category=category)
+
+
+def _setup_data_manager(args, config):
+    """Create DataManager with cache and providers."""
+    from sp500.core.registry import discover_providers
     from sp500.data.cache import SQLiteCache
     from sp500.data.manager import DataManager
 
-    # Ensure data directory exists
     db_path = config["cache"]["db_path"]
     os.makedirs(os.path.dirname(db_path), exist_ok=True)
 
     ttl = 0 if args.no_cache else config["cache"]["ttl_hours"]
     cache = SQLiteCache(db_path, ttl)
     providers = discover_providers(config)
-    data_manager = DataManager(providers, cache, config)
+    return DataManager(providers, cache, config)
+
+
+def cmd_undervalue(args, config):
+    """Run undervalue screening."""
+    from sp500.core.orchestrator import Orchestrator
+    from sp500.core.registry import discover_strategies
+
+    data_manager = _setup_data_manager(args, config)
     strategies = discover_strategies(config)
 
     # Handle custom weights for composite
@@ -44,26 +76,24 @@ def cmd_undervalue(args, config):
     orchestrator = Orchestrator(data_manager)
     results = orchestrator.run(strategy, args.top)
 
-    # Output
-    if args.output_format == "csv":
-        from sp500.output.formatters import format_csv
-        output = format_csv(results, args.output)
-        if not args.output:
-            print(output)
-    elif args.output_format == "json":
-        from sp500.output.formatters import format_json
-        output = format_json(results)
-        if args.output:
-            with open(args.output, "w") as f:
-                f.write(output)
-        else:
-            print(output)
-    else:
-        from sp500.output.report import print_report
-        sector_map = dict(zip(orchestrator.constituents["Symbol"],
-                              orchestrator.constituents["GICS Sector"]))
-        print_report(results, strategy.name, verbose=args.verbose,
-                     sector_map=sector_map)
+    _output_results(args, results, strategy.name, orchestrator,
+                    category="Undervalue")
+
+
+def cmd_sentiment(args, config):
+    """Run sentiment screening."""
+    from sp500.core.orchestrator import Orchestrator
+    from sp500.core.registry import discover_sentiment_strategies
+
+    data_manager = _setup_data_manager(args, config)
+    strategies = discover_sentiment_strategies(config)
+
+    strategy = strategies[args.method]
+    orchestrator = Orchestrator(data_manager)
+    results = orchestrator.run(strategy, args.top)
+
+    _output_results(args, results, strategy.name, orchestrator,
+                    category="Sentiment")
 
 
 def cmd_cache(args, config):
@@ -121,6 +151,17 @@ def main():
     uv.add_argument("--no-cache", action="store_true")
     uv.add_argument("--verbose", action="store_true")
 
+    # sentiment subcommand
+    sent = subparsers.add_parser("sentiment", help="Run sentiment screening")
+    sent.add_argument("--method", default="composite",
+                      choices=["analyst", "recommendations", "composite"])
+    sent.add_argument("--top", type=int, default=20)
+    sent.add_argument("--format", dest="output_format", default="table",
+                      choices=["table", "csv", "json"])
+    sent.add_argument("--output", type=str, default=None)
+    sent.add_argument("--no-cache", action="store_true")
+    sent.add_argument("--verbose", action="store_true")
+
     # cache subcommand
     cache_p = subparsers.add_parser("cache", help="Cache management")
     cache_p.add_argument("--status", action="store_true")
@@ -135,15 +176,18 @@ def main():
     logging.basicConfig(level=level, format="%(levelname)s %(name)s: %(message)s")
 
     if args.list_strategies:
-        from sp500.core.registry import discover_strategies
-        strategies = discover_strategies(config)
-        print("Available strategies:")
-        for name, s in strategies.items():
-            print(f"  {name:12s}  {s.description}")
+        from sp500.core.registry import discover_all_strategies
+        all_strats = discover_all_strategies(config)
+        for category, strategies in all_strats.items():
+            print(f"\n{category}:")
+            for name, s in strategies.items():
+                print(f"  {name:20s}  {s.description}")
         return
 
     if args.command == "undervalue":
         cmd_undervalue(args, config)
+    elif args.command == "sentiment":
+        cmd_sentiment(args, config)
     elif args.command == "cache":
         cmd_cache(args, config)
     else:
