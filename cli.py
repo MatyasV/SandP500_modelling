@@ -1,6 +1,8 @@
 """CLI entry point for S&P 500 Analysis Engine."""
 
 import argparse
+import logging
+import os
 
 import yaml
 
@@ -13,20 +15,92 @@ def load_config(path: str = "config.yaml") -> dict:
 
 def cmd_undervalue(args, config):
     """Run undervalue screening."""
-    # TODO: Wire up orchestrator, strategy selection, output formatting
-    raise NotImplementedError
+    from sp500.core.orchestrator import Orchestrator
+    from sp500.core.registry import discover_providers, discover_strategies
+    from sp500.data.cache import SQLiteCache
+    from sp500.data.manager import DataManager
+
+    # Ensure data directory exists
+    db_path = config["cache"]["db_path"]
+    os.makedirs(os.path.dirname(db_path), exist_ok=True)
+
+    cache = SQLiteCache(db_path, config["cache"]["ttl_hours"])
+    providers = discover_providers(config)
+    data_manager = DataManager(providers, cache, config)
+    strategies = discover_strategies(config)
+
+    # Handle custom weights for composite
+    if args.weights and args.method == "composite":
+        from sp500.strategies.undervalue.composite import CompositeStrategy
+        weights = {}
+        for pair in args.weights.split(","):
+            name, val = pair.split("=")
+            weights[name.strip()] = float(val)
+        sub = [strategies["graham"], strategies["dcf"], strategies["relative"]]
+        strategies["composite"] = CompositeStrategy(sub, weights)
+
+    strategy = strategies[args.method]
+    orchestrator = Orchestrator(data_manager)
+    results = orchestrator.run(strategy, args.top)
+
+    # Output
+    if args.output_format == "csv":
+        from sp500.output.formatters import format_csv
+        output = format_csv(results, args.output)
+        if not args.output:
+            print(output)
+    elif args.output_format == "json":
+        from sp500.output.formatters import format_json
+        output = format_json(results)
+        if args.output:
+            with open(args.output, "w") as f:
+                f.write(output)
+        else:
+            print(output)
+    else:
+        from sp500.output.report import print_report
+        print_report(results, strategy.name, verbose=args.verbose)
 
 
 def cmd_cache(args, config):
     """Cache management commands."""
-    # TODO: Implement cache status, clear, clear-older-than
-    raise NotImplementedError
+    from sp500.data.cache import SQLiteCache
+
+    db_path = config["cache"]["db_path"]
+    if not os.path.exists(db_path):
+        print("No cache database found.")
+        return
+
+    cache = SQLiteCache(db_path, config["cache"]["ttl_hours"])
+
+    if args.status:
+        size = os.path.getsize(db_path)
+        count = cache.conn.execute("SELECT COUNT(*) FROM cache").fetchone()[0]
+        oldest, newest = cache.conn.execute(
+            "SELECT MIN(fetched_at), MAX(fetched_at) FROM cache"
+        ).fetchone()
+        print(f"Cache DB: {db_path}")
+        print(f"Size: {size / 1024:.1f} KB")
+        print(f"Entries: {count}")
+        print(f"Oldest: {oldest or 'N/A'}")
+        print(f"Newest: {newest or 'N/A'}")
+    elif args.clear:
+        if args.older_than:
+            from datetime import datetime, timedelta
+            hours = int(args.older_than.rstrip("h"))
+            cutoff = datetime.utcnow() - timedelta(hours=hours)
+            deleted = cache.invalidate(older_than=cutoff)
+        else:
+            deleted = cache.invalidate()
+        print(f"Cleared {deleted} cache entries.")
 
 
 def main():
     parser = argparse.ArgumentParser(description="S&P 500 Analysis Engine")
     parser.add_argument("--list-strategies", action="store_true",
                         help="List available strategies")
+    parser.add_argument("-v", "--verbose-log", action="store_true",
+                        help="Enable verbose logging")
     subparsers = parser.add_subparsers(dest="command")
 
     # undervalue subcommand
@@ -51,9 +125,16 @@ def main():
     args = parser.parse_args()
     config = load_config()
 
+    # Set up logging
+    level = logging.INFO if args.verbose_log else logging.WARNING
+    logging.basicConfig(level=level, format="%(levelname)s %(name)s: %(message)s")
+
     if args.list_strategies:
-        # TODO: List all discovered strategies
-        print("TODO: list strategies")
+        from sp500.core.registry import discover_strategies
+        strategies = discover_strategies(config)
+        print("Available strategies:")
+        for name, s in strategies.items():
+            print(f"  {name:12s}  {s.description}")
         return
 
     if args.command == "undervalue":
