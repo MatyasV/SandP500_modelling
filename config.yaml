@@ -14,13 +14,29 @@ dcf:
   discount_rate: 0.10           # 10% flat for v1
   max_growth_cap: 0.20          # cap historical growth rate at 20%
 
+momentum:
+  rsi_period: 14
+  sma_short: 50
+  sma_long: 200
+  weights:
+    rsi: 0.35
+    ma_crossover: 0.35
+    high_proximity: 0.30
+
+dividend:
+  yield_trap_threshold: 0.08   # yields above 8% penalized as potential traps
+  min_history_years: 1
+
 composite:
   default_weights:
     graham: 1.0
     dcf: 1.0
     relative: 1.0
-  weight_by_confidence: true    # scale weights by data completeness
+    momentum: 0.8              # lower weight: momentum is not a value signal
+    quality: 1.0
+    dividend: 0.8              # lower weight: not all stocks pay dividends
+  weight_by_confidence: true   # scale weights by data completeness
 
 defaults:
   top_n: 20
-  output_format: table          # table | csv | json
+  output_format: table         # table | csv | json

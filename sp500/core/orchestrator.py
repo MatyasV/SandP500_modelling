@@ -25,6 +25,7 @@ class Orchestrator:
         # Step 1: Get constituents
         logger.info("Fetching S&P 500 constituents...")
         constituents = self.data_manager.fetch_constituents()
+        self.constituents = constituents
         logger.info("Got %d constituents", len(constituents))
 
         # Step 2: Filter universe

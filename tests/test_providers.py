@@ -20,15 +20,19 @@ class TestWikipediaProvider(unittest.TestCase):
     def test_provides_constituents(self):
         self.assertIn(DataField.CONSTITUENTS, self.provider.provides())
 
-    @patch("sp500.data.providers.wiki.pd.read_html")
-    def test_fetch_constituents(self, mock_read_html):
-        """Test Wikipedia scraping with mocked pandas.read_html."""
+    @patch("sp500.data.providers.wiki.requests.get")
+    def test_fetch_constituents(self, mock_get):
+        """Test Wikipedia scraping with mocked requests.get."""
         mock_df = pd.DataFrame({
             "Symbol": ["AAPL", "BRK.B", "MSFT"],
             "Security": ["Apple", "Berkshire Hathaway", "Microsoft"],
             "GICS Sector": ["Technology", "Financials", "Technology"],
         })
-        mock_read_html.return_value = [mock_df]
+        # Build a minimal HTML table that pd.read_html can parse
+        mock_resp = MagicMock()
+        mock_resp.text = mock_df.to_html()
+        mock_resp.raise_for_status = MagicMock()
+        mock_get.return_value = mock_resp
 
         result = self.provider.fetch_constituents()
 
@@ -37,15 +41,18 @@ class TestWikipediaProvider(unittest.TestCase):
         self.assertIn("BRK-B", result["Symbol"].values)
         self.assertNotIn("BRK.B", result["Symbol"].values)
 
-    @patch("sp500.data.providers.wiki.pd.read_html")
-    def test_fetch_returns_constituents(self, mock_read_html):
+    @patch("sp500.data.providers.wiki.requests.get")
+    def test_fetch_returns_constituents(self, mock_get):
         """Test that fetch() returns constituents under sentinel key."""
         mock_df = pd.DataFrame({
             "Symbol": ["AAPL"],
             "Security": ["Apple"],
             "GICS Sector": ["Technology"],
         })
-        mock_read_html.return_value = [mock_df]
+        mock_resp = MagicMock()
+        mock_resp.text = mock_df.to_html()
+        mock_resp.raise_for_status = MagicMock()
+        mock_get.return_value = mock_resp
 
         result = self.provider.fetch(["AAPL"], {DataField.CONSTITUENTS})
         self.assertIn("__constituents__", result)

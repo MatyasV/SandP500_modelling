@@ -109,17 +109,18 @@ class DCFStrategy(BaseStrategy):
         first_fcf = float(fcf_series.iloc[0])
         last_fcf = float(fcf_series.iloc[-1])
 
-        if first_fcf <= 0:
-            # Can't compute CAGR with non-positive starting value; use simple average growth
+        if first_fcf <= 0 or last_fcf <= 0:
+            # Can't compute CAGR with non-positive values; use conservative default
             growth_rate = min(0.05, self.max_growth_cap)
+            base_fcf = float(avg_fcf)  # use average since endpoints are unreliable
         else:
             n_periods = years_available - 1
             growth_rate = (last_fcf / first_fcf) ** (1 / n_periods) - 1
             growth_rate = min(growth_rate, self.max_growth_cap)
             growth_rate = max(growth_rate, 0.0)  # floor at 0 for negative growth
+            base_fcf = float(last_fcf)
 
         # Project FCF forward
-        base_fcf = float(last_fcf)
         projected = []
         for year in range(1, self.projection_years + 1):
             projected.append(base_fcf * (1 + growth_rate) ** year)

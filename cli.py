@@ -24,7 +24,8 @@ def cmd_undervalue(args, config):
     db_path = config["cache"]["db_path"]
     os.makedirs(os.path.dirname(db_path), exist_ok=True)
 
-    cache = SQLiteCache(db_path, config["cache"]["ttl_hours"])
+    ttl = 0 if args.no_cache else config["cache"]["ttl_hours"]
+    cache = SQLiteCache(db_path, ttl)
     providers = discover_providers(config)
     data_manager = DataManager(providers, cache, config)
     strategies = discover_strategies(config)
@@ -59,7 +60,10 @@ def cmd_undervalue(args, config):
             print(output)
     else:
         from sp500.output.report import print_report
-        print_report(results, strategy.name, verbose=args.verbose)
+        sector_map = dict(zip(orchestrator.constituents["Symbol"],
+                              orchestrator.constituents["GICS Sector"]))
+        print_report(results, strategy.name, verbose=args.verbose,
+                     sector_map=sector_map)
 
 
 def cmd_cache(args, config):
@@ -106,7 +110,8 @@ def main():
     # undervalue subcommand
     uv = subparsers.add_parser("undervalue", help="Run undervalue screening")
     uv.add_argument("--method", default="composite",
-                    choices=["graham", "dcf", "relative", "composite"])
+                    choices=["graham", "dcf", "relative", "momentum",
+                             "quality", "dividend", "composite"])
     uv.add_argument("--top", type=int, default=20)
     uv.add_argument("--weights", type=str, default=None,
                     help="Comma-separated weights, e.g. graham=2,dcf=1,relative=1")
