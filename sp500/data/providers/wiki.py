@@ -1,9 +1,11 @@
 """WikipediaProvider — fetches S&P 500 constituent list from Wikipedia."""
 
 import logging
+from io import StringIO
 from typing import Any
 
 import pandas as pd
+import requests
 
 from sp500.data.fields import DataField
 from sp500.data.providers.base import BaseProvider
@@ -11,6 +13,7 @@ from sp500.data.providers.base import BaseProvider
 logger = logging.getLogger(__name__)
 
 _WIKI_URL = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
+_HEADERS = {"User-Agent": "SP500AnalysisEngine/0.1 (educational project)"}
 
 
 class WikipediaProvider(BaseProvider):
@@ -33,7 +36,9 @@ class WikipediaProvider(BaseProvider):
     def fetch_constituents(self) -> pd.DataFrame:
         """Fetch the S&P 500 constituent table from Wikipedia."""
         logger.info("Fetching S&P 500 constituent list from Wikipedia...")
-        tables = pd.read_html(_WIKI_URL)
+        resp = requests.get(_WIKI_URL, headers=_HEADERS)
+        resp.raise_for_status()
+        tables = pd.read_html(StringIO(resp.text))
         df = tables[0]
         # Normalise ticker symbols: Wikipedia uses dots (BRK.B), yfinance uses dashes (BRK-B)
         df["Symbol"] = df["Symbol"].str.strip().str.replace(".", "-", regex=False)
