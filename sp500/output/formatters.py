@@ -9,12 +9,34 @@ from rich.table import Table
 from sp500.core.models import StrategyResult
 
 
+def _score_style(score: float) -> str:
+    """Return rich style string: red (low) -> yellow (mid) -> green (high)."""
+    if score >= 70:
+        return "bold green"
+    elif score >= 50:
+        return "green"
+    elif score >= 30:
+        return "yellow"
+    elif score >= 15:
+        return "dark_orange"
+    else:
+        return "red"
+
+
+def _score_bar(score: float, width: int = 20) -> str:
+    """Render an inline Unicode bar chart for a score 0-100."""
+    filled = int(score / 100 * width)
+    style = _score_style(score)
+    return f"[{style}]{'█' * filled}[/{style}][dim]{'░' * (width - filled)}[/dim]"
+
+
 def format_table(results: list[StrategyResult], verbose: bool = False) -> Table:
     """Format results as a rich Table object."""
     table = Table(title="Undervalue Screening Results", show_lines=False)
     table.add_column("Rank", justify="right", style="dim", width=4)
     table.add_column("Ticker", style="cyan bold", width=8)
-    table.add_column("Score", justify="right", style="green", width=8)
+    table.add_column("Score", justify="right", width=8)
+    table.add_column("", width=22)  # score bar
     table.add_column("Confidence", justify="right", width=10)
 
     if verbose and results:
@@ -24,11 +46,13 @@ def format_table(results: list[StrategyResult], verbose: bool = False) -> Table:
             table.add_column(key, justify="right", width=14)
 
     for rank, r in enumerate(results, start=1):
+        style = _score_style(r.score)
         confidence_style = "green" if r.confidence >= 0.7 else "yellow" if r.confidence >= 0.4 else "red"
         row = [
             str(rank),
             r.ticker,
-            f"{r.score:.1f}",
+            f"[{style}]{r.score:.1f}[/{style}]",
+            _score_bar(r.score),
             f"[{confidence_style}]{r.confidence:.2f}[/{confidence_style}]",
         ]
         if verbose:

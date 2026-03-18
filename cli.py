@@ -60,7 +60,10 @@ def cmd_undervalue(args, config):
             print(output)
     else:
         from sp500.output.report import print_report
-        print_report(results, strategy.name, verbose=args.verbose)
+        sector_map = dict(zip(orchestrator.constituents["Symbol"],
+                              orchestrator.constituents["GICS Sector"]))
+        print_report(results, strategy.name, verbose=args.verbose,
+                     sector_map=sector_map)
 
 
 def cmd_cache(args, config):
@@ -107,7 +110,8 @@ def main():
     # undervalue subcommand
     uv = subparsers.add_parser("undervalue", help="Run undervalue screening")
     uv.add_argument("--method", default="composite",
-                    choices=["graham", "dcf", "relative", "composite"])
+                    choices=["graham", "dcf", "relative", "momentum",
+                             "quality", "dividend", "composite"])
     uv.add_argument("--top", type=int, default=20)
     uv.add_argument("--weights", type=str, default=None,
                     help="Comma-separated weights, e.g. graham=2,dcf=1,relative=1")
