@@ -40,3 +40,6 @@ See `PROJECT_OVERVIEW.md` for full product spec and `ARCHITECTURE.md` for system
 - yfinance is rate-limited — respect `config.yaml` rate limit settings
 - Do not modify `ARCHITECTURE.md` or `PROJECT_OVERVIEW.md` without explicit approval
 - Keep strategies independent — no strategy should import another strategy directly (composite uses injection)
+
+
+## Common Mistakes (add to this over time)
