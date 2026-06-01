@@ -48,3 +48,72 @@ class Orchestrator:
         # Step 5: Sort and return top N
         results.sort(key=lambda r: r.score, reverse=True)
         return results[:top_n]
+
+    def run_screen(self, strategies: dict[str, BaseStrategy], top_n: int = 20,
+                   filters: dict[str, tuple] | None = None) -> list:
+        """
+        Run multiple category strategies, merge results into ScreenResults.
+
+        strategies: dict of category_name -> strategy (typically composites)
+        filters: dict of category_name -> (min_score, max_score) where None means no bound
+                 e.g. {"undervalue": (50, None), "risk": (None, 30), "growth": (40, None)}
+        """
+        from sp500.core.models import ScreenResult
+
+        # Fetch constituents once, shared across all categories
+        logger.info("Fetching S&P 500 constituents for screen...")
+        constituents = self.data_manager.fetch_constituents()
+        self.constituents = constituents
+        logger.info("Got %d constituents", len(constituents))
+
+        # Run each category strategy independently
+        category_results: dict[str, dict[str, StrategyResult]] = {}
+        for cat_name, strategy in strategies.items():
+            logger.info("Running %s strategy for screen...", cat_name)
+            filtered = strategy.filter_universe(constituents)
+            tickers = filtered["Symbol"].tolist()
+            all_data = self.data_manager.fetch(tickers, strategy.required_fields)
+            results = strategy.analyze_all(all_data)
+            category_results[cat_name] = {r.ticker: r for r in results}
+            logger.info("Got %d %s results", len(results), cat_name)
+
+        # Merge: include any ticker appearing in at least one category
+        if not category_results:
+            return []
+        all_tickers: set[str] = set()
+        for by_ticker in category_results.values():
+            all_tickers.update(by_ticker.keys())
+
+        screen_results: list[ScreenResult] = []
+        for ticker in all_tickers:
+            scores: dict[str, float] = {}
+            confidences: dict[str, float] = {}
+            details: dict = {}
+            for cat_name, by_ticker in category_results.items():
+                if ticker in by_ticker:
+                    r = by_ticker[ticker]
+                    scores[cat_name] = round(r.score, 1)
+                    confidences[cat_name] = round(r.confidence, 2)
+                    for k, v in r.details.items():
+                        details[f"{cat_name}_{k}"] = v
+            screen_results.append(ScreenResult(
+                ticker=ticker,
+                scores=scores,
+                confidences=confidences,
+                details=details,
+            ))
+
+        # Apply score filters
+        if filters:
+            for cat, (lo, hi) in filters.items():
+                screen_results = [
+                    r for r in screen_results
+                    if cat in r.scores
+                    and (lo is None or r.scores[cat] >= lo)
+                    and (hi is None or r.scores[cat] <= hi)
+                ]
+
+        # Sort by first category's score descending
+        first_cat = next(iter(strategies))
+        screen_results.sort(key=lambda r: r.scores.get(first_cat, 0.0), reverse=True)
+        return screen_results[:top_n]

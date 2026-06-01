@@ -47,6 +47,41 @@ composite:
     dividend: 0.8              # lower weight: not all stocks pay dividends
   weight_by_confidence: true   # scale weights by data completeness
 
+volatility:
+  weights:
+    vol: 0.40
+    beta: 0.30
+    drawdown: 0.30
+
+risk_adjusted:
+  risk_free_rate: 0.05           # 5% risk-free rate (10yr Treasury approximation)
+  weights:
+    sharpe: 0.50
+    sortino: 0.50
+
+risk:
+  default_weights:
+    volatility: 1.0
+    risk_adjusted: 1.0
+  weight_by_confidence: true
+
+growth:
+  default_weights:
+    earnings: 1.0
+    revenue: 1.0
+    margins: 0.8
+  weight_by_confidence: true
+
+fred:
+  fallback_risk_free_rate: 0.045   # used if ^TNX fetch fails
+
+correlation:
+  lookback_days: 252               # trading days to use for correlation calculation
+
+portfolio:
+  lookback_days: 252               # trading days to use for return calculation
+  min_tickers: 2                   # minimum tickers required for optimization
+
 defaults:
   top_n: 20
   output_format: table         # table | csv | json

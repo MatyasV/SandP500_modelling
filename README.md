@@ -1,130 +1,184 @@
 # S&P 500 Analysis Engine
 
-A modular Python framework for screening S&P 500 companies. Fetches only the data each analysis needs, caches it in SQLite, and blends six independent valuation/quality strategies into a single composite score.
+A modular Python framework for screening and analysing S&P 500 companies across six independent categories: undervalue, sentiment, risk, growth, correlation, and portfolio construction. Data is fetched on demand, cached in SQLite, and all scores are normalised 0–100 so categories can be combined freely.
 
-## Quick Start
+## Setup
 
 ```bash
 pip install -r requirements.txt
+python cli.py --list-strategies   # verify everything is working
+```
 
-# Composite screen (all 6 strategies blended) — top 20
-python cli.py undervalue --top 20
+---
 
-# Single strategy
-python cli.py undervalue --method graham --top 10
-python cli.py undervalue --method momentum --top 15
+## Commands
 
-# Custom composite weights
-python cli.py undervalue --weights "graham=2,dcf=1,relative=1,momentum=0.5,quality=1,dividend=0.5"
+### Undervalue screening
 
-# Verbose output (shows per-strategy detail columns)
-python cli.py undervalue --top 10 --verbose
+Blends six valuation/quality strategies. Higher score = more undervalued.
 
-# Export
+```bash
+python cli.py undervalue                            # composite (default), top 20
+python cli.py undervalue --method graham            # single strategy
+python cli.py undervalue --method dcf
+python cli.py undervalue --method relative
+python cli.py undervalue --method momentum
+python cli.py undervalue --method quality
+python cli.py undervalue --method dividend
+
+python cli.py undervalue --top 10 --verbose         # show per-strategy detail columns
+python cli.py undervalue --weights "graham=2,dcf=1" # override composite weights
+python cli.py undervalue --chart                    # save score + sector charts to output/
 python cli.py undervalue --format csv --output results.csv
-python cli.py undervalue --format json --output results.json
+python cli.py undervalue --format json
+```
 
-# Cache management
+### Sentiment screening
+
+Analyst consensus and recommendation trends. Higher score = more bullish.
+
+```bash
+python cli.py sentiment                             # composite (default)
+python cli.py sentiment --method analyst
+python cli.py sentiment --method recommendations
+python cli.py sentiment --top 10 --chart
+```
+
+### Risk profiling
+
+Historical volatility and risk-adjusted returns. Higher score = riskier.
+
+```bash
+python cli.py risk                                  # composite (default)
+python cli.py risk --method volatility
+python cli.py risk --method risk_adjusted
+python cli.py risk --top 20 --chart
+```
+
+### Growth trend screening
+
+Earnings, revenue, and margin trajectory. Higher score = faster improving.
+
+```bash
+python cli.py growth                                # composite (default)
+python cli.py growth --method earnings
+python cli.py growth --method revenue
+python cli.py growth --method margins
+python cli.py growth --top 20 --chart
+```
+
+### Cross-category screening
+
+Combine filters across categories. Only stocks satisfying all conditions are returned.
+
+```bash
+python cli.py screen --undervalue-min 60 --risk-max 40
+python cli.py screen --undervalue-min 70 --risk-max 30 --growth-min 50 --top 20
+python cli.py screen --undervalue-min 50 --top 50
+```
+
+Score conventions: `--X-min` means "I want a high score in X"; `--risk-max` means "I want low risk."
+
+### Correlation analysis
+
+Pairwise return correlations. Produces a matrix/pair list, not a ranked ticker list.
+
+```bash
+python cli.py correlation --diversification-pairs --top 20   # lowest-corr pairs
+python cli.py correlation --correlated --top 20              # highest-corr pairs
+python cli.py correlation --sector-matrix                    # sector-level heatmap
+python cli.py correlation --pair AAPL MSFT GOOG              # specific tickers
+python cli.py correlation --tickers AAPL,MSFT,AMZN,GOOG
+```
+
+A correlation heatmap PNG is always saved to `output/`.
+
+### Portfolio construction
+
+Mean-variance optimisation or equal-weight allocation over a given set of tickers.
+
+```bash
+python cli.py portfolio --tickers AAPL,MSFT,AMZN,GOOG
+python cli.py portfolio --tickers AAPL,MSFT,AMZN --method equal-weight
+python cli.py portfolio --tickers AAPL,MSFT,AMZN --frontier   # add efficient frontier chart
+
+# Optimise over stocks from a screen
+python cli.py portfolio --from-screen --undervalue-min 60 --top 20
+python cli.py portfolio --from-screen --undervalue-min 60 --risk-max 40 --top 20 --frontier
+```
+
+A portfolio weights chart PNG is always saved to `output/`. The live risk-free rate is fetched automatically via the 10-year Treasury yield (^TNX).
+
+### Cache management
+
+```bash
 python cli.py cache --status
 python cli.py cache --clear
 python cli.py cache --clear --older-than 48h
-
-# List all available strategies
-python cli.py --list-strategies
 ```
+
+Use `--no-cache` on any command to bypass the cache for that run.
+
+---
 
 ## Strategies
 
-Six strategies, each producing a normalised 0-100 score (higher = more undervalued or higher quality):
+| Category | Method name | What it measures |
+|---|---|---|
+| undervalue | `graham` | Graham Number vs current price |
+| undervalue | `dcf` | Discounted cash flow fair value |
+| undervalue | `relative` | P/E, P/B, EV/EBITDA vs sector peers |
+| undervalue | `momentum` | RSI, SMA crossover, 52-week high proximity |
+| undervalue | `quality` | Leverage, ROE, interest coverage, revenue stability |
+| undervalue | `dividend` | Yield, payout sustainability, consistency, growth |
+| sentiment | `analyst` | Current price vs analyst price targets |
+| sentiment | `recommendations` | Buy/hold/sell trend and direction |
+| risk | `volatility` | Historical vol, beta, max drawdown |
+| risk | `risk_adjusted` | Sharpe and Sortino ratios (inverted) |
+| growth | `earnings` | Quarterly EPS acceleration |
+| growth | `revenue` | Revenue growth trajectory |
+| growth | `margins` | Gross/operating/net margin expansion |
 
-### Value Strategies
+Each category also has a `composite` method (the default) that blends its strategies using configurable weights.
 
-1. **Graham Number** — classic Benjamin Graham formula: `sqrt(22.5 x EPS x Book Value)`. If the stock price is well below this number, it may be undervalued. Pure balance-sheet metric, fast and deterministic. Excludes financial-sector stocks.
+---
 
-2. **DCF (Discounted Cash Flow)** — projects future free cash flows using historical CAGR, discounts them to present value via Gordon Growth Model. More forward-looking but requires assumptions (5-year projection, 10% discount rate, 2.5% terminal growth, growth capped at 20%). Excludes financial-sector stocks.
+## Composite scoring
 
-3. **Relative Valuation** — compares P/E, P/B, and EV/EBITDA ratios against sector peers. A stock at the 10th percentile P/E in its sector scores 90. Includes all sectors (like-for-like comparison).
-
-### Momentum & Quality Strategies
-
-4. **Momentum** — combines RSI(14), 50/200-day moving average crossover, and proximity to 52-week high. Each signal is percentile-ranked across the full universe, then blended. All sectors included.
-
-5. **Quality/Safety** — scores on leverage (debt-to-equity), interest coverage, ROE, and revenue stability. Equal-weighted blend of the four metrics. Excludes financial-sector stocks.
-
-6. **Dividend Quality** — evaluates yield attractiveness vs sector peers, payout sustainability, dividend consistency, and dividend growth rate. Penalises yields above 8% as potential yield traps. Excludes non-dividend-paying stocks.
-
-## Composite Scoring
-
-The composite strategy blends all six sub-strategies using configurable **relative weights** (they don't need to sum to 1). The final score is:
+The composite uses a confidence-weighted average:
 
 ```
-score = sum(strategy_score * effective_weight) / sum(effective_weight)
+score = Σ(sub_score × weight × confidence) / Σ(weight × confidence)
 ```
 
-Default weights from `config.yaml`:
+Default weights are in `config.yaml`. Strategies with incomplete data automatically contribute less via confidence scaling (`weight_by_confidence: true`).
 
-| Strategy | Default Weight | Rationale |
-|---|---|---|
-| Graham | 1.0 | Core value signal |
-| DCF | 1.0 | Core value signal |
-| Relative | 1.0 | Core value signal |
-| Momentum | 0.8 | Not a pure value signal |
-| Quality | 1.0 | Directly value-relevant |
-| Dividend | 0.8 | Not all stocks pay dividends |
-
-When `weight_by_confidence: true` (the default), each strategy's weight is scaled by its confidence: `effective_weight = base_weight * confidence`. This means strategies with incomplete data automatically contribute less.
-
-## Confidence System
-
-Each strategy assigns a confidence value (0-1) based on how complete its input data was. The composite confidence is the simple average of all contributing sub-strategy confidences.
-
-| Strategy | Confidence = 1.0 when | Lower when |
-|---|---|---|
-| **Graham** | Always 1.0 (or no result at all) | N/A |
-| **DCF** | 5+ years of cash flow data | 3-4 yrs → 0.6, <3 yrs → 0.3 |
-| **Relative** | All 3 ratios available + sector ≥ 5 stocks | Fewer ratios → lower; small sector → 0.8x penalty |
-| **Momentum** | 252+ trading days of price history | 126-251 days → 0.6, <126 → 0.3 |
-| **Dividend** | 10+ years of dividend history | 5-9 yrs → 0.7, 2-4 → 0.4, <2 → 0.2 |
-| **Quality** | 4+ years of financials + 3+ metrics computed | Fewer years or metrics → lower |
-
-Financial-sector stocks naturally get lower composite confidence because Graham, DCF, and Quality all exclude them — only Relative, Momentum, and Dividend contribute scores. This is intentional: these valuation models don't work well for banks/insurers/REITs.
-
-Confidence also explains run-to-run variation: if cached data expires (24-hour TTL) and yfinance returns a different number of historical years on re-fetch, confidence changes, which shifts both the composite confidence and the weighted score.
-
-## Terminal Output
-
-The report includes:
-
-- **Color-coded scores** — red (0-15), orange (15-30), yellow (30-50), green (50-70), bold green (70+)
-- **Inline score bars** — Unicode block characters (█░) providing a visual score at a glance
-- **Score histogram** — distribution of scores across 10 bins (0-10 through 90-100)
-- **Sector distribution chart** — horizontal bar chart showing which sectors appear in the results
-- **Summary footer** — stock count, score range, and average confidence
-
-Use `--verbose` to add per-strategy detail columns to the main table.
+---
 
 ## Configuration
 
-All tuneable parameters live in `config.yaml`:
+All tunable parameters are in `config.yaml`: cache TTL, yfinance rate limits, DCF assumptions (discount rate, terminal growth), composite weights, momentum signal weights, risk-free rate fallback, and more.
 
-- **Cache**: SQLite path, TTL (default 24 hours)
-- **Rate limits**: per-ticker delay, batch size, batch pause (for yfinance)
-- **DCF defaults**: projection years, discount rate, terminal growth, growth cap
-- **Momentum**: RSI period, SMA windows, signal weights
-- **Dividend**: yield trap threshold, minimum history
-- **Composite**: per-strategy weights, confidence weighting toggle
+---
 
-## Tech Stack
+## Output
 
-Python 3.10+ with `yfinance`, `pandas`, `beautifulsoup4`, `numpy`, `scipy`, `rich`, `pyyaml`, and SQLite via `sqlite3`.
+- **Terminal tables** — colour-coded scores (red → orange → yellow → green), inline score bars, sector distribution panel, score histogram
+- **Verbose mode** (`--verbose`) — adds per-strategy detail columns (actual ratios, FCF values, etc.)
+- **Charts** (`--chart`) — saves PNG files to `output/`; correlation and portfolio always produce a chart
+- **Export** — `--format csv` or `--format json` for use in notebooks or spreadsheets
+
+---
 
 ## Tests
 
 ```bash
-python -m unittest discover tests -v
+python -m unittest discover tests -v   # 152 tests
 ```
+
+---
 
 ## Documentation
 
-- [Project Overview](PROJECT_OVERVIEW.md) — goals, data sources, build order
-- [Architecture](ARCHITECTURE.md) — design, components, extensibility
+- [Project Overview](PROJECT_OVERVIEW.md) — goals, analysis categories, design decisions
+- [Architecture](ARCHITECTURE.md) — components, interfaces, extensibility guide

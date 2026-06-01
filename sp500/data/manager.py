@@ -11,6 +11,8 @@ from sp500.data.providers.base import BaseProvider
 
 logger = logging.getLogger(__name__)
 
+_MACRO_FIELDS = frozenset({DataField.RISK_FREE_RATE, DataField.INFLATION_RATE, DataField.GDP_GROWTH})
+
 
 class DataManager:
     def __init__(self, providers: list[BaseProvider], cache: SQLiteCache, config: dict):
@@ -36,14 +38,35 @@ class DataManager:
         4. Fetch from providers in rate-limited batches
         5. Cache the results and return the complete dataset
         """
-        # Separate CONSTITUENTS from per-ticker fields
-        per_ticker_fields = fields - {DataField.CONSTITUENTS}
+        # Separate CONSTITUENTS and macro fields from per-ticker fields
+        macro_fields_needed = fields & _MACRO_FIELDS
+        per_ticker_fields = fields - {DataField.CONSTITUENTS} - _MACRO_FIELDS
         need_constituents = DataField.CONSTITUENTS in fields
 
         # Step 0: Fetch constituents once if needed
         constituents_df = None
         if need_constituents:
             constituents_df = self.fetch_constituents()
+
+        # Fetch macro data once (e.g. risk-free rate) and cache under "__macro__" sentinel
+        macro_data: dict = {}
+        if macro_fields_needed:
+            # Check cache first (use "__macro__" as the ticker key)
+            cached_macro = self.cache.get("__macro__", macro_fields_needed)
+            macro_data.update(cached_macro.found)
+            if cached_macro.missing:
+                # Find a provider for any of the missing macro fields
+                provider = None
+                for field in cached_macro.missing:
+                    provider = self._field_to_provider.get(field)
+                    if provider is not None:
+                        break
+                if provider is not None:
+                    fetched = provider.fetch(["__macro__"], cached_macro.missing)
+                    if "__macro__" in fetched:
+                        new_macro = fetched["__macro__"]
+                        self.cache.put("__macro__", new_macro)
+                        macro_data.update(new_macro)
 
         # Step 1: Check cache for each ticker
         all_data: dict[str, dict[DataField, Any]] = {}
@@ -97,6 +120,11 @@ class DataManager:
         if need_constituents and constituents_df is not None:
             for ticker in all_data:
                 all_data[ticker][DataField.CONSTITUENTS] = constituents_df
+
+        # Inject macro data into every ticker's data dict
+        if macro_data:
+            for ticker in all_data:
+                all_data[ticker].update(macro_data)
 
         return all_data
 
