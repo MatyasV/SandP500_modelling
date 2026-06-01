@@ -30,7 +30,7 @@ class RiskAdjustedReturnsStrategy(BaseStrategy):
 
     @property
     def required_fields(self) -> set[DataField]:
-        return {DataField.PRICE_HISTORY}
+        return {DataField.PRICE_HISTORY, DataField.RISK_FREE_RATE}
 
     def filter_universe(self, constituents: pd.DataFrame) -> pd.DataFrame:
         return constituents
@@ -39,6 +39,15 @@ class RiskAdjustedReturnsStrategy(BaseStrategy):
         raise NotImplementedError("RiskAdjustedReturnsStrategy requires analyze_all()")
 
     def analyze_all(self, all_data: dict[str, dict[DataField, Any]]) -> list[StrategyResult]:
+        # Get live risk-free rate (injected by FREDProvider via DataManager macro handling)
+        # Fall back to config value if not available
+        rfr = self.risk_free_rate  # config fallback
+        for ticker_data in all_data.values():
+            live_rfr = ticker_data.get(DataField.RISK_FREE_RATE)
+            if live_rfr is not None:
+                rfr = float(live_rfr)
+                break
+
         tickers_list: list[str] = []
         sharpes: list[float] = []
         sortinos: list[float] = []
@@ -62,7 +71,7 @@ class RiskAdjustedReturnsStrategy(BaseStrategy):
                 ann_return = (1 + daily_returns.mean()) ** 252 - 1
                 ann_vol = daily_returns.std() * sqrt(252)
 
-                sharpe = (ann_return - self.risk_free_rate) / ann_vol if ann_vol > 0 else 0.0
+                sharpe = (ann_return - rfr) / ann_vol if ann_vol > 0 else 0.0
 
                 neg_returns = daily_returns[daily_returns < 0]
                 if len(neg_returns) > 0:
@@ -70,7 +79,7 @@ class RiskAdjustedReturnsStrategy(BaseStrategy):
                 else:
                     downside_std = ann_vol
 
-                sortino = (ann_return - self.risk_free_rate) / downside_std if downside_std > 0 else 0.0
+                sortino = (ann_return - rfr) / downside_std if downside_std > 0 else 0.0
 
                 n_rows = len(close)
 

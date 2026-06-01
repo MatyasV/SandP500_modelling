@@ -126,3 +126,88 @@ def print_screen_report(results: list, filters: dict | None = None) -> None:
     console.print()
     console.print(f"[dim]{len(results)} stock{'s' if len(results) != 1 else ''} passed all filters[/dim]")
     console.print()
+
+
+def print_pairs_report(pairs: list, title: str = "Correlation Pairs",
+                       sector_matrix=None) -> None:
+    """Print a correlation pairs report using rich."""
+    from sp500.output.formatters import format_pairs_table
+    console = Console()
+    console.print()
+    console.print(f"[bold]{title}[/bold]")
+    console.print(f"[dim]{datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}[/dim]")
+    console.print()
+    if not pairs:
+        console.print("[yellow]No pairs to display.[/yellow]")
+        console.print()
+        return
+    table = format_pairs_table(pairs, title=title)
+    console.print(table)
+    console.print()
+    console.print(f"[dim]Showing {len(pairs)} pairs | "
+                  f"Correlation range: {pairs[0].correlation:+.3f} to {pairs[-1].correlation:+.3f}[/dim]")
+    console.print()
+
+
+def print_sector_correlation_report(sector_matrix) -> None:
+    """Print a sector-level correlation matrix as a rich Table."""
+    console = Console()
+    console.print()
+    console.print("[bold]Sector Correlation Matrix[/bold]")
+    console.print(f"[dim]{datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}[/dim]")
+    console.print()
+    if sector_matrix is None or sector_matrix.empty:
+        console.print("[yellow]No sector data available.[/yellow]")
+        console.print()
+        return
+
+    from rich.table import Table
+    sectors = list(sector_matrix.columns)
+    table = Table(show_lines=True)
+    table.add_column("Sector", style="cyan bold", width=30)
+    for s in sectors:
+        table.add_column(s[:15], justify="right", width=10)
+
+    for s in sectors:
+        row = [s]
+        for s2 in sectors:
+            val = sector_matrix.loc[s, s2]
+            if s == s2:
+                row.append("[dim]1.000[/dim]")
+            elif val >= 0.7:
+                row.append(f"[red]{val:.3f}[/red]")
+            elif val >= 0.5:
+                row.append(f"[dark_orange]{val:.3f}[/dark_orange]")
+            elif val >= 0:
+                row.append(f"[yellow]{val:.3f}[/yellow]")
+            else:
+                row.append(f"[green]{val:.3f}[/green]")
+        table.add_row(*row)
+    console.print(table)
+    console.print()
+
+
+def print_portfolio_report(allocation) -> None:
+    """Print a portfolio allocation report using rich."""
+    from sp500.output.formatters import format_portfolio_table
+    from rich.panel import Panel
+    console = Console()
+    console.print()
+    console.print("[bold]S&P 500 Portfolio Optimisation[/bold]")
+    console.print(f"[dim]{datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}[/dim]")
+    console.print()
+
+    method_label = allocation.method.replace("_", " ").title()
+    table = format_portfolio_table(allocation, title=f"Portfolio Weights — {method_label}")
+    console.print(table)
+    console.print()
+
+    if allocation.expected_return != 0.0 or allocation.expected_volatility != 0.0:
+        stats = (
+            f"Expected Return: [bold]{allocation.expected_return*100:.1f}%[/bold] p.a.  │  "
+            f"Volatility: [bold]{allocation.expected_volatility*100:.1f}%[/bold] p.a.  │  "
+            f"Sharpe: [bold]{allocation.sharpe_ratio:.2f}[/bold]  │  "
+            f"Tickers: [bold]{len(allocation.tickers)}[/bold]"
+        )
+        console.print(Panel(stats, border_style="dim", expand=False))
+    console.print()

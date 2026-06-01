@@ -14,7 +14,7 @@ def load_config(path: str = "config.yaml") -> dict:
 
 
 def _output_results(args, results, strategy_name, orchestrator=None,
-                    category="Undervalue"):
+                    category="Undervalue", chart: bool = False):
     """Shared output logic for all category commands."""
     if args.output_format == "csv":
         from sp500.output.formatters import format_csv
@@ -37,6 +37,16 @@ def _output_results(args, results, strategy_name, orchestrator=None,
                                   orchestrator.constituents["GICS Sector"]))
         print_report(results, strategy_name, verbose=args.verbose,
                      sector_map=sector_map, category=category)
+
+    if chart and results:
+        from sp500.output.charts import plot_score_distribution, plot_sector_allocation
+        paths = []
+        paths.append(plot_score_distribution(results, category))
+        if orchestrator and hasattr(orchestrator, 'constituents') and orchestrator.constituents is not None:
+            sector_map = dict(zip(orchestrator.constituents["Symbol"],
+                                  orchestrator.constituents["GICS Sector"]))
+            paths.append(plot_sector_allocation(results, sector_map, category))
+        print(f"Charts saved: {', '.join(paths)}")
 
 
 def _setup_data_manager(args, config):
@@ -77,7 +87,7 @@ def cmd_undervalue(args, config):
     results = orchestrator.run(strategy, args.top)
 
     _output_results(args, results, strategy.name, orchestrator,
-                    category="Undervalue")
+                    category="Undervalue", chart=args.chart)
 
 
 def cmd_sentiment(args, config):
@@ -93,7 +103,7 @@ def cmd_sentiment(args, config):
     results = orchestrator.run(strategy, args.top)
 
     _output_results(args, results, strategy.name, orchestrator,
-                    category="Sentiment")
+                    category="Sentiment", chart=args.chart)
 
 
 def cmd_risk(args, config):
@@ -108,7 +118,7 @@ def cmd_risk(args, config):
     orchestrator = Orchestrator(data_manager)
     results = orchestrator.run(strategy, args.top)
 
-    _output_results(args, results, strategy.name, orchestrator, category="Risk")
+    _output_results(args, results, strategy.name, orchestrator, category="Risk", chart=args.chart)
 
 
 def cmd_growth(args, config):
@@ -123,7 +133,7 @@ def cmd_growth(args, config):
     orchestrator = Orchestrator(data_manager)
     results = orchestrator.run(strategy, args.top)
 
-    _output_results(args, results, strategy.name, orchestrator, category="Growth")
+    _output_results(args, results, strategy.name, orchestrator, category="Growth", chart=args.chart)
 
 
 def cmd_screen(args, config):
@@ -163,6 +173,125 @@ def cmd_screen(args, config):
     results = orchestrator.run_screen(strategies, args.top, filters or None)
 
     print_screen_report(results, filters or None)
+
+
+def cmd_correlation(args, config):
+    """Run correlation analysis."""
+    from sp500.strategies.correlation.pairs import CorrelationAnalyzer
+    from sp500.output.report import print_pairs_report, print_sector_correlation_report
+    from sp500.output.charts import plot_correlation_heatmap
+    from sp500.core.models import CorrelationResult
+
+    data_manager = _setup_data_manager(args, config)
+    analyzer = CorrelationAnalyzer(config)
+    constituents = data_manager.fetch_constituents()
+    sector_map = dict(zip(constituents["Symbol"], constituents["GICS Sector"]))
+
+    # Determine ticker list
+    if args.pair:
+        tickers = args.pair
+    elif args.tickers:
+        tickers = [t.strip() for t in args.tickers.split(",")]
+    else:
+        tickers = constituents["Symbol"].tolist()
+
+    all_data = data_manager.fetch(tickers, analyzer.required_fields)
+
+    if args.sector_matrix:
+        corr_result = analyzer.compute_matrix(all_data)
+        sect_matrix = analyzer.sector_matrix(corr_result, sector_map)
+        print_sector_correlation_report(sect_matrix)
+        heatmap_result = CorrelationResult(matrix=sect_matrix, tickers=list(sect_matrix.columns))
+        path = plot_correlation_heatmap(heatmap_result)
+        print(f"Sector heatmap saved: {path}")
+    else:
+        corr_result = analyzer.compute_matrix(all_data)
+        mode = "diversifying" if not args.correlated else "correlated"
+        pairs = analyzer.find_pairs(corr_result, top_n=args.top, mode=mode,
+                                    sector_map=sector_map)
+        title = ("Most Diversifying Pairs (Lowest Correlation)" if mode == "diversifying"
+                 else "Most Correlated Pairs (Highest Correlation)")
+        print_pairs_report(pairs, title=title)
+        path = plot_correlation_heatmap(corr_result)
+        print(f"Heatmap saved: {path}")
+
+
+def cmd_portfolio(args, config):
+    """Run portfolio optimisation."""
+    from sp500.strategies.portfolio.optimizer import PortfolioOptimizer
+    from sp500.output.report import print_portfolio_report
+    from sp500.output.charts import plot_portfolio_weights, plot_efficient_frontier
+    from sp500.data.fields import DataField
+
+    data_manager = _setup_data_manager(args, config)
+    optimizer = PortfolioOptimizer(config)
+
+    if args.from_screen:
+        # Run screen first, take top tickers, then optimise
+        from sp500.core.orchestrator import Orchestrator
+        from sp500.core.registry import (discover_strategies, discover_risk_strategies,
+                                          discover_growth_strategies)
+        strategies = {}
+        filters = {}
+        if args.undervalue_min is not None:
+            strategies["undervalue"] = discover_strategies(config)["composite"]
+            filters["undervalue"] = (args.undervalue_min, None)
+        if args.risk_max is not None:
+            strategies["risk"] = discover_risk_strategies(config)["composite"]
+            filters["risk"] = (None, args.risk_max)
+        if args.growth_min is not None:
+            strategies["growth"] = discover_growth_strategies(config)["composite"]
+            filters["growth"] = (args.growth_min, None)
+        if not strategies:
+            strategies["undervalue"] = discover_strategies(config)["composite"]
+
+        orchestrator = Orchestrator(data_manager)
+        screen_results = orchestrator.run_screen(strategies, top_n=args.top,
+                                                  filters=filters or None)
+        tickers = [r.ticker for r in screen_results]
+        if not tickers:
+            print("Screen returned no results — try relaxing your filters.")
+            return
+        print(f"Optimising portfolio from {len(tickers)} screen results...")
+        all_data = data_manager.fetch(tickers, optimizer.required_fields)
+    else:
+        if not args.tickers:
+            print("Error: provide --tickers AAPL,MSFT,GOOG or use --from-screen")
+            return
+        tickers = [t.strip() for t in args.tickers.split(",")]
+        all_data = data_manager.fetch(tickers, optimizer.required_fields)
+
+    # Get live risk-free rate if available
+    rfr = 0.045
+    for ticker_data in all_data.values():
+        live_rfr = ticker_data.get(DataField.RISK_FREE_RATE)
+        if live_rfr is not None:
+            rfr = float(live_rfr)
+            break
+
+    if args.method == "equal-weight":
+        allocation = optimizer.equal_weight(all_data)
+    else:
+        allocation = optimizer.optimize_max_sharpe(all_data, risk_free_rate=rfr)
+
+    if allocation is None:
+        print("Not enough price history data to optimise portfolio.")
+        return
+
+    print_portfolio_report(allocation)
+    path1 = plot_portfolio_weights(allocation)
+    print(f"Weights chart saved: {path1}")
+
+    if args.frontier:
+        print("Computing efficient frontier (may take a moment)...")
+        frontier = optimizer.compute_efficient_frontier(all_data, risk_free_rate=rfr)
+        optimal = {
+            "vol": allocation.expected_volatility,
+            "return": allocation.expected_return,
+            "sharpe": allocation.sharpe_ratio,
+        }
+        path2 = plot_efficient_frontier(frontier, optimal)
+        print(f"Efficient frontier saved: {path2}")
 
 
 def cmd_cache(args, config):
@@ -219,6 +348,7 @@ def main():
     uv.add_argument("--output", type=str, default=None)
     uv.add_argument("--no-cache", action="store_true")
     uv.add_argument("--verbose", action="store_true")
+    uv.add_argument("--chart", action="store_true", help="Save charts to output/")
 
     # sentiment subcommand
     sent = subparsers.add_parser("sentiment", help="Run sentiment screening")
@@ -230,6 +360,7 @@ def main():
     sent.add_argument("--output", type=str, default=None)
     sent.add_argument("--no-cache", action="store_true")
     sent.add_argument("--verbose", action="store_true")
+    sent.add_argument("--chart", action="store_true", help="Save charts to output/")
 
     # risk subcommand
     risk_p = subparsers.add_parser("risk", help="Run risk profiling")
@@ -241,6 +372,7 @@ def main():
     risk_p.add_argument("--output", type=str, default=None)
     risk_p.add_argument("--no-cache", action="store_true")
     risk_p.add_argument("--verbose", action="store_true")
+    risk_p.add_argument("--chart", action="store_true", help="Save charts to output/")
 
     # growth subcommand
     growth_p = subparsers.add_parser("growth", help="Run growth trend screening")
@@ -252,6 +384,7 @@ def main():
     growth_p.add_argument("--output", type=str, default=None)
     growth_p.add_argument("--no-cache", action="store_true")
     growth_p.add_argument("--verbose", action="store_true")
+    growth_p.add_argument("--chart", action="store_true", help="Save charts to output/")
 
     # screen subcommand
     screen_p = subparsers.add_parser("screen", help="Cross-category screen")
@@ -263,6 +396,38 @@ def main():
                           help="Minimum growth score (0-100)")
     screen_p.add_argument("--top", type=int, default=20)
     screen_p.add_argument("--no-cache", action="store_true")
+
+    # correlation subcommand
+    corr_p = subparsers.add_parser("correlation", help="Correlation analysis")
+    corr_p.add_argument("--sector-matrix", action="store_true",
+                        help="Show sector-level correlation matrix")
+    corr_p.add_argument("--diversification-pairs", action="store_true",
+                        help="Show most diversifying (low-correlation) pairs")
+    corr_p.add_argument("--correlated", action="store_true",
+                        help="Show most correlated pairs instead of most diversifying")
+    corr_p.add_argument("--pair", nargs="+", metavar="TICKER",
+                        help="Specific tickers to analyse (e.g. AAPL MSFT GOOG)")
+    corr_p.add_argument("--tickers", type=str, default=None,
+                        help="Comma-separated tickers (e.g. AAPL,MSFT,GOOG)")
+    corr_p.add_argument("--top", type=int, default=20)
+    corr_p.add_argument("--no-cache", action="store_true")
+
+    # portfolio subcommand
+    port_p = subparsers.add_parser("portfolio", help="Portfolio optimisation")
+    port_p.add_argument("--tickers", type=str, default=None,
+                        help="Comma-separated tickers (e.g. AAPL,MSFT,GOOG)")
+    port_p.add_argument("--from-screen", action="store_true",
+                        help="Run screen first then optimise the results")
+    port_p.add_argument("--undervalue-min", type=float, default=None)
+    port_p.add_argument("--risk-max", type=float, default=None)
+    port_p.add_argument("--growth-min", type=float, default=None)
+    port_p.add_argument("--top", type=int, default=20,
+                        help="Number of screen results to use as candidates")
+    port_p.add_argument("--method", default="max-sharpe",
+                        choices=["max-sharpe", "equal-weight"])
+    port_p.add_argument("--frontier", action="store_true",
+                        help="Also compute and save the efficient frontier chart")
+    port_p.add_argument("--no-cache", action="store_true")
 
     # cache subcommand
     cache_p = subparsers.add_parser("cache", help="Cache management")
@@ -298,6 +463,10 @@ def main():
         cmd_growth(args, config)
     elif args.command == "screen":
         cmd_screen(args, config)
+    elif args.command == "correlation":
+        cmd_correlation(args, config)
+    elif args.command == "portfolio":
+        cmd_portfolio(args, config)
     else:
         parser.print_help()
 

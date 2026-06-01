@@ -8,7 +8,8 @@ def discover_providers(config: dict | None = None) -> list[BaseProvider]:
     """Instantiate all available providers."""
     from sp500.data.providers.wiki import WikipediaProvider
     from sp500.data.providers.yfinance_ import YFinanceProvider
-    return [WikipediaProvider(), YFinanceProvider(config)]
+    from sp500.data.providers.fred import FREDProvider
+    return [WikipediaProvider(), YFinanceProvider(config), FREDProvider(config)]
 
 
 def discover_strategies(config: dict | None = None) -> dict[str, BaseStrategy]:

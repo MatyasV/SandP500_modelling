@@ -27,7 +27,7 @@ def _score_bar(score: float, width: int = 20) -> str:
     """Render an inline Unicode bar chart for a score 0-100."""
     filled = int(score / 100 * width)
     style = _score_style(score)
-    return f"[{style}]{'â–ˆ' * filled}[/{style}][dim]{'â–‘' * (width - filled)}[/dim]"
+    return f"[{style}]{'█' * filled}[/{style}][dim]{'░' * (width - filled)}[/dim]"
 
 
 def format_table(results: list[StrategyResult], title: str = "Screening Results") -> Table:
@@ -71,7 +71,7 @@ def format_detail_table(results: list[StrategyResult],
         row = [str(rank), r.ticker]
         for key in detail_keys:
             val = r.details.get(key)
-            row.append(str(val) if val is not None else "â€”")
+            row.append(str(val) if val is not None else "—")
         table.add_row(*row)
 
     return table
@@ -146,7 +146,7 @@ def format_screen_table(results: list, title: str = "Cross-Category Screen Resul
                 style = _score_style(score)
                 row.append(f"[{style}]{score:.1f}[/{style}]")
             else:
-                row.append("â€”")
+                row.append("—")
         if r.confidences:
             avg_conf = sum(r.confidences.values()) / len(r.confidences)
         else:
@@ -158,3 +158,51 @@ def format_screen_table(results: list, title: str = "Cross-Category Screen Resul
     return table
 
 
+def format_pairs_table(pairs: list, title: str = "Correlation Pairs") -> Table:
+    """Format a list of PairResult as a rich Table."""
+    table = Table(title=title, show_lines=False)
+    table.add_column("Rank", justify="right", style="dim", width=4)
+    table.add_column("Ticker 1", style="cyan bold", width=8)
+    table.add_column("Ticker 2", style="cyan bold", width=8)
+    table.add_column("Correlation", justify="right", width=12)
+    table.add_column("Sector 1", width=28)
+    table.add_column("Sector 2", width=28)
+
+    for rank, pair in enumerate(pairs, start=1):
+        corr = pair.correlation
+        if corr <= -0.3:
+            style = "bold green"
+        elif corr <= 0.0:
+            style = "green"
+        elif corr <= 0.5:
+            style = "yellow"
+        elif corr <= 0.7:
+            style = "dark_orange"
+        else:
+            style = "red"
+        table.add_row(
+            str(rank),
+            pair.ticker1,
+            pair.ticker2,
+            f"[{style}]{corr:+.3f}[/{style}]",
+            pair.sector1 or "—",
+            pair.sector2 or "—",
+        )
+    return table
+
+
+def format_portfolio_table(allocation, title: str = "Portfolio Weights") -> Table:
+    """Format an AllocationResult as a rich Table, sorted by weight descending."""
+    table = Table(title=title, show_lines=False)
+    table.add_column("Rank", justify="right", style="dim", width=4)
+    table.add_column("Ticker", style="cyan bold", width=8)
+    table.add_column("Weight", justify="right", width=10)
+    table.add_column("", width=22)  # weight bar
+
+    sorted_weights = sorted(allocation.weights.items(), key=lambda x: x[1], reverse=True)
+    for rank, (ticker, weight) in enumerate(sorted_weights, start=1):
+        pct = weight * 100
+        filled = int(pct / 100 * 20)
+        bar = f"[green]{'█' * filled}[/green][dim]{'░' * (20 - filled)}[/dim]"
+        table.add_row(str(rank), ticker, f"{pct:.1f}%", bar)
+    return table

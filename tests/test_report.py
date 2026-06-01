@@ -3,7 +3,7 @@
 import unittest
 
 from sp500.core.models import StrategyResult
-from sp500.output.formatters import _score_style, _score_bar, format_table
+from sp500.output.formatters import _score_style, _score_bar, format_table, format_detail_table
 
 
 class TestScoreStyle(unittest.TestCase):
@@ -51,9 +51,10 @@ class TestFormatTable(unittest.TestCase):
     def test_verbose_adds_detail_columns(self):
         results = [StrategyResult(ticker="AAPL", score=75.0,
                                   details={"fair_value": 200, "pe": 15}, confidence=0.9)]
-        table = format_table(results, verbose=True)
-        # 5 base + 2 detail columns
-        self.assertEqual(len(table.columns), 7)
+        detail_table = format_detail_table(results)
+        self.assertIsNotNone(detail_table)
+        # Rank + Ticker + 2 detail columns = 4
+        self.assertEqual(len(detail_table.columns), 4)
 
 
 if __name__ == "__main__":

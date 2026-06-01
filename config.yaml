@@ -72,6 +72,16 @@ growth:
     margins: 0.8
   weight_by_confidence: true
 
+fred:
+  fallback_risk_free_rate: 0.045   # used if ^TNX fetch fails
+
+correlation:
+  lookback_days: 252               # trading days to use for correlation calculation
+
+portfolio:
+  lookback_days: 252               # trading days to use for return calculation
+  min_tickers: 2                   # minimum tickers required for optimization
+
 defaults:
   top_n: 20
   output_format: table         # table | csv | json

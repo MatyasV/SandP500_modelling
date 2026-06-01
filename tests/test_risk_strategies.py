@@ -99,7 +99,8 @@ class TestRiskAdjustedReturnsStrategy(unittest.TestCase):
         self.assertEqual(self.strategy.name, "risk_adjusted")
 
     def test_required_fields(self):
-        self.assertEqual(self.strategy.required_fields, {DataField.PRICE_HISTORY})
+        self.assertEqual(self.strategy.required_fields,
+                         {DataField.PRICE_HISTORY, DataField.RISK_FREE_RATE})
 
     def test_analyze_all_returns_results(self):
         """Basic smoke test."""
@@ -150,7 +151,7 @@ class TestRiskCompositeStrategy(unittest.TestCase):
         self.assertEqual(self.strategy.name, "risk_composite")
 
     def test_required_fields_is_union(self):
-        expected = {DataField.PRICE_HISTORY, DataField.INFO}
+        expected = {DataField.PRICE_HISTORY, DataField.INFO, DataField.RISK_FREE_RATE}
         self.assertEqual(self.strategy.required_fields, expected)
 
     def test_default_equal_weights(self):
