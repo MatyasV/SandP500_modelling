@@ -87,3 +87,37 @@ def print_report(results: list[StrategyResult], strategy_name: str,
                   f"Score range: {min(scores):.1f} – {max(scores):.1f} | "
                   f"Avg confidence: {avg_conf:.2f}[/dim]")
     console.print()
+
+
+def print_screen_report(results: list, filters: dict | None = None) -> None:
+    """Print a cross-category screen report to the terminal."""
+    console = Console()
+    console.print()
+    console.print("[bold]S&P 500 Cross-Category Screen[/bold]")
+    console.print(f"[dim]{datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}[/dim]")
+
+    if filters:
+        parts = []
+        for cat, (lo, hi) in filters.items():
+            if lo is not None and hi is not None:
+                parts.append(f"{cat}: {lo}–{hi}")
+            elif lo is not None:
+                parts.append(f"{cat} ≥ {lo}")
+            elif hi is not None:
+                parts.append(f"{cat} ≤ {hi}")
+        if parts:
+            console.print(f"[dim]Filters: {' | '.join(parts)}[/dim]")
+
+    console.print()
+
+    if not results:
+        console.print("[yellow]No stocks matched the screen criteria.[/yellow]")
+        console.print()
+        return
+
+    from sp500.output.formatters import format_screen_table
+    table = format_screen_table(results)
+    console.print(table)
+    console.print()
+    console.print(f"[dim]{len(results)} stock{'s' if len(results) != 1 else ''} passed all filters[/dim]")
+    console.print()

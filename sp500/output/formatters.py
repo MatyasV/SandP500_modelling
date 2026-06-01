@@ -108,3 +108,39 @@ def format_json(results: list[StrategyResult]) -> str:
             "details": r.details,
         })
     return json.dumps(data, indent=2)
+
+
+def format_screen_table(results: list, title: str = "Cross-Category Screen Results") -> Table:
+    """Format ScreenResult list as a rich Table with one column per category."""
+    if not results:
+        table = Table(title=title)
+        table.add_column("Info")
+        table.add_row("No results")
+        return table
+
+    categories = list(results[0].scores.keys())
+    table = Table(title=title, show_lines=False)
+    table.add_column("Rank", justify="right", style="dim", width=4)
+    table.add_column("Ticker", style="cyan bold", width=8)
+    for cat in categories:
+        table.add_column(cat.capitalize(), justify="right", width=12)
+    table.add_column("Avg Conf", justify="right", width=10)
+
+    for rank, r in enumerate(results, start=1):
+        row = [str(rank), r.ticker]
+        for cat in categories:
+            score = r.scores.get(cat)
+            if score is not None:
+                style = _score_style(score)
+                row.append(f"[{style}]{score:.1f}[/{style}]")
+            else:
+                row.append("—")
+        if r.confidences:
+            avg_conf = sum(r.confidences.values()) / len(r.confidences)
+        else:
+            avg_conf = 0.0
+        conf_style = "green" if avg_conf >= 0.7 else "yellow" if avg_conf >= 0.4 else "red"
+        row.append(f"[{conf_style}]{avg_conf:.2f}[/{conf_style}]")
+        table.add_row(*row)
+
+    return table

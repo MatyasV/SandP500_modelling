@@ -18,3 +18,11 @@ class StrategyResult:
 class CacheResult:
     found: dict[DataField, Any]     # fields in cache and still fresh
     missing: set[DataField]         # fields that need fetching
+
+
+@dataclass
+class ScreenResult:
+    ticker: str
+    scores: dict[str, float]       # category -> composite score
+    confidences: dict[str, float]  # category -> avg confidence
+    details: dict[str, Any]        # merged details keyed as "category_key"

@@ -96,6 +96,75 @@ def cmd_sentiment(args, config):
                     category="Sentiment")
 
 
+def cmd_risk(args, config):
+    """Run risk profiling."""
+    from sp500.core.orchestrator import Orchestrator
+    from sp500.core.registry import discover_risk_strategies
+
+    data_manager = _setup_data_manager(args, config)
+    strategies = discover_risk_strategies(config)
+
+    strategy = strategies[args.method]
+    orchestrator = Orchestrator(data_manager)
+    results = orchestrator.run(strategy, args.top)
+
+    _output_results(args, results, strategy.name, orchestrator, category="Risk")
+
+
+def cmd_growth(args, config):
+    """Run growth trend screening."""
+    from sp500.core.orchestrator import Orchestrator
+    from sp500.core.registry import discover_growth_strategies
+
+    data_manager = _setup_data_manager(args, config)
+    strategies = discover_growth_strategies(config)
+
+    strategy = strategies[args.method]
+    orchestrator = Orchestrator(data_manager)
+    results = orchestrator.run(strategy, args.top)
+
+    _output_results(args, results, strategy.name, orchestrator, category="Growth")
+
+
+def cmd_screen(args, config):
+    """Run cross-category screen."""
+    from sp500.core.orchestrator import Orchestrator
+    from sp500.core.registry import (discover_strategies, discover_risk_strategies,
+                                      discover_growth_strategies)
+    from sp500.output.report import print_screen_report
+
+    data_manager = _setup_data_manager(args, config)
+
+    # Build strategy dict using composite from each requested category
+    strategies = {}
+    if args.undervalue_min is not None:
+        strategies["undervalue"] = discover_strategies(config)["composite"]
+    if args.risk_max is not None:
+        strategies["risk"] = discover_risk_strategies(config)["composite"]
+    if args.growth_min is not None:
+        strategies["growth"] = discover_growth_strategies(config)["composite"]
+
+    # If no filters specified, run all three
+    if not strategies:
+        strategies["undervalue"] = discover_strategies(config)["composite"]
+        strategies["risk"] = discover_risk_strategies(config)["composite"]
+        strategies["growth"] = discover_growth_strategies(config)["composite"]
+
+    # Build filters dict
+    filters = {}
+    if args.undervalue_min is not None:
+        filters["undervalue"] = (args.undervalue_min, None)
+    if args.risk_max is not None:
+        filters["risk"] = (None, args.risk_max)
+    if args.growth_min is not None:
+        filters["growth"] = (args.growth_min, None)
+
+    orchestrator = Orchestrator(data_manager)
+    results = orchestrator.run_screen(strategies, args.top, filters or None)
+
+    print_screen_report(results, filters or None)
+
+
 def cmd_cache(args, config):
     """Cache management commands."""
     from sp500.data.cache import SQLiteCache
@@ -162,6 +231,39 @@ def main():
     sent.add_argument("--no-cache", action="store_true")
     sent.add_argument("--verbose", action="store_true")
 
+    # risk subcommand
+    risk_p = subparsers.add_parser("risk", help="Run risk profiling")
+    risk_p.add_argument("--method", default="composite",
+                        choices=["volatility", "risk_adjusted", "composite"])
+    risk_p.add_argument("--top", type=int, default=20)
+    risk_p.add_argument("--format", dest="output_format", default="table",
+                        choices=["table", "csv", "json"])
+    risk_p.add_argument("--output", type=str, default=None)
+    risk_p.add_argument("--no-cache", action="store_true")
+    risk_p.add_argument("--verbose", action="store_true")
+
+    # growth subcommand
+    growth_p = subparsers.add_parser("growth", help="Run growth trend screening")
+    growth_p.add_argument("--method", default="composite",
+                          choices=["earnings", "revenue", "margins", "composite"])
+    growth_p.add_argument("--top", type=int, default=20)
+    growth_p.add_argument("--format", dest="output_format", default="table",
+                          choices=["table", "csv", "json"])
+    growth_p.add_argument("--output", type=str, default=None)
+    growth_p.add_argument("--no-cache", action="store_true")
+    growth_p.add_argument("--verbose", action="store_true")
+
+    # screen subcommand
+    screen_p = subparsers.add_parser("screen", help="Cross-category screen")
+    screen_p.add_argument("--undervalue-min", type=float, default=None,
+                          help="Minimum undervalue score (0-100)")
+    screen_p.add_argument("--risk-max", type=float, default=None,
+                          help="Maximum risk score (0-100)")
+    screen_p.add_argument("--growth-min", type=float, default=None,
+                          help="Minimum growth score (0-100)")
+    screen_p.add_argument("--top", type=int, default=20)
+    screen_p.add_argument("--no-cache", action="store_true")
+
     # cache subcommand
     cache_p = subparsers.add_parser("cache", help="Cache management")
     cache_p.add_argument("--status", action="store_true")
@@ -190,6 +292,12 @@ def main():
         cmd_sentiment(args, config)
     elif args.command == "cache":
         cmd_cache(args, config)
+    elif args.command == "risk":
+        cmd_risk(args, config)
+    elif args.command == "growth":
+        cmd_growth(args, config)
+    elif args.command == "screen":
+        cmd_screen(args, config)
     else:
         parser.print_help()
 

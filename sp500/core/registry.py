@@ -75,9 +75,66 @@ def discover_sentiment_strategies(config: dict | None = None) -> dict[str, BaseS
     }
 
 
+def discover_risk_strategies(config: dict | None = None) -> dict[str, BaseStrategy]:
+    """Instantiate all available risk profiling strategies keyed by name."""
+    from sp500.strategies.risk.volatility import VolatilityStrategy
+    from sp500.strategies.risk.risk_adjusted import RiskAdjustedReturnsStrategy
+    from sp500.strategies.risk.composite import RiskCompositeStrategy
+
+    volatility = VolatilityStrategy(config)
+    risk_adjusted = RiskAdjustedReturnsStrategy(config)
+
+    risk_cfg = (config or {}).get("risk", {})
+    weights = risk_cfg.get("default_weights")
+    weight_by_confidence = risk_cfg.get("weight_by_confidence", True)
+
+    composite = RiskCompositeStrategy(
+        strategies=[volatility, risk_adjusted],
+        weights=weights,
+        weight_by_confidence=weight_by_confidence,
+    )
+
+    return {
+        "volatility": volatility,
+        "risk_adjusted": risk_adjusted,
+        "composite": composite,
+    }
+
+
+def discover_growth_strategies(config: dict | None = None) -> dict[str, BaseStrategy]:
+    """Instantiate all available growth trend strategies keyed by name."""
+    from sp500.strategies.growth.earnings import EarningsTrendStrategy
+    from sp500.strategies.growth.revenue import RevenueTrendStrategy
+    from sp500.strategies.growth.margins import MarginAnalysisStrategy
+    from sp500.strategies.growth.composite import GrowthCompositeStrategy
+
+    earnings = EarningsTrendStrategy()
+    revenue = RevenueTrendStrategy()
+    margins = MarginAnalysisStrategy()
+
+    growth_cfg = (config or {}).get("growth", {})
+    weights = growth_cfg.get("default_weights")
+    weight_by_confidence = growth_cfg.get("weight_by_confidence", True)
+
+    composite = GrowthCompositeStrategy(
+        strategies=[earnings, revenue, margins],
+        weights=weights,
+        weight_by_confidence=weight_by_confidence,
+    )
+
+    return {
+        "earnings": earnings,
+        "revenue": revenue,
+        "margins": margins,
+        "composite": composite,
+    }
+
+
 def discover_all_strategies(config: dict | None = None) -> dict[str, dict[str, BaseStrategy]]:
     """Return all strategies grouped by category."""
     return {
         "undervalue": discover_strategies(config),
         "sentiment": discover_sentiment_strategies(config),
+        "risk": discover_risk_strategies(config),
+        "growth": discover_growth_strategies(config),
     }
