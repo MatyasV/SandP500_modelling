@@ -7,7 +7,7 @@ from rich.console import Console
 from rich.panel import Panel
 
 from sp500.core.models import StrategyResult
-from sp500.output.formatters import format_table
+from sp500.output.formatters import format_detail_table, format_table
 
 
 def _print_sector_distribution(results: list[StrategyResult],
@@ -65,9 +65,14 @@ def print_report(results: list[StrategyResult], strategy_name: str,
         console.print("[yellow]No results to display.[/yellow]")
         return
 
-    table = format_table(results, verbose=verbose,
-                         title=f"{category} Screening Results")
+    table = format_table(results, title=f"{category} Screening Results")
     console.print(table)
+
+    if verbose:
+        detail_table = format_detail_table(results, title="Detail Breakdown")
+        if detail_table is not None:
+            console.print()
+            console.print(detail_table)
 
     # Sector distribution
     if sector_map:
